@@ -12,12 +12,27 @@ var routes = require('./routes/api');
 var users = require('./routes/users');
 var auth = require('./routes/auth');
 
-server.listen(8000)//, "127.0.0.1");
+server.listen(8000);
 
 io.on('connection', function(socket){
   console.log('user connected');
   socket.emit('hello', {message: 'hello world'});
+  socket.on('room', function(data){
+    console.log(data.roomName);
+    socket.join(`${ data.roomName }`)
+    io.to(`${data.roomName}`).emit('welcome',{message: 'welcome to the game'});
+  })
+  socket.on('greeting', function(data){
+    console.log('room', data.room);
+    console.log('user', data.user);
+    io.to(data.room).emit('wtf', {message: data.message})
+  })
+  socket.on('bailsor', function(data){
+    socket.leave(data.room);
+  })
 })
+
+
 
 
 
