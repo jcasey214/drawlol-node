@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "start": "node ./bin/www"
+    "start": "nodemon js/app.js"
   },
   "dependencies": {
     "body-parser": "~1.13.2",
@@ -17,7 +17,11 @@
     "morgan": "~1.6.1",
     "passport": "^0.3.2",
     "pg": "^4.5.1",
+    "promised-mongo": "^1.2.0",
     "serve-favicon": "~2.3.0",
     "socket.io": "^1.4.5"
+  },
+  "devDependencies": {
+    "nodemon": "^1.9.1"
   }
 }
