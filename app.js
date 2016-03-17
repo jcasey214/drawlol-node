@@ -19,14 +19,11 @@ var db = mongo(dbURL, 'games');
 server.listen(8000);
 
 io.on('connection', function(socket){
-  console.log('user connected');
   socket.emit('handshake', {});
   socket.on('joinRoom', function(data){
-    console.log(data.roomName);
     socket.join(`${ data.roomName }`);
     io.to(`${data.roomName}`).emit('userJoined',{user: data.user});
     db.collection('games').findOne({'room': data.roomName}).then(function(gameData){
-      console.log(gameData);
       if(gameData === null){
         db.collection('games').insert({
           room: data.roomName,
@@ -42,37 +39,28 @@ io.on('connection', function(socket){
           }
         }).then(function(){
           socket.emit('joinSuccess', {roomName: data.roomName, creator: true})
-          console.log('successfully created game room');
         })
       }else{
         var usernameInGame = checkDbForUser(gameData, data.user);
         if(!usernameInGame){
-          console.log('here', gameData.players);
           gameData.players.push({username: data.user, sheet: []});
-          console.log('here too', gameData.players);
           db.collection('games').findAndModify({
             query: {'room': data.roomName },
             update: {$set: {'players': gameData.players}}
           }).then(function(data){
-            console.log('successfully added player to db', gameData.players);
+            return;
           })
         }
-        console.log('room exists in db');
       }
-      console.log('database connected', data);
     })
   })
   socket.on('chatMessage', function(data){
     io.to(data.room).emit('chatMessage', {message: data.message, user: data.user})
   })
   socket.on('sheetSubmit', function(data){
-    console.log(data);
-    //insert into database and query for round array length here to determine if round is over
     db.collection('games').findOne({'room': data.roomName}).then(function(gameData){
-      console.log('in find callback', gameData);
       gameData.players.forEach(function(player){
         if( player.username == data.sheet){
-          console.log('in first if', player.username);
           if(data.phase == 'draw'){
             console.log('draw');
             player.sheet.push(data.image);
@@ -81,10 +69,11 @@ io.on('connection', function(socket){
             player.sheet.push(data.sentence)
           }
           var round = data.round.toString();
-          console.log('round number is', round);
-          console.log('gameData', gameData.rounds[round]);
-          console.log('user', data.user);
-          gameData.rounds[round].push(data.user);
+          if(gameData.rounds[round]){
+            gameData.rounds[round].push(data.user);
+          }else{
+            gameData.rounds[round] = [data.user]
+          }
         }
       })
       db.collection('games').findAndModify({
@@ -94,10 +83,21 @@ io.on('connection', function(socket){
         socket.emit('success', {});
         db.collection('games').findOne({'room': data.roomName}).then(function(gameData){
           var round = data.round.toString();
-          console.log('result of last find', gameData, 'round', round);
-          console.log('length', gameData.rounds[round].length, gameData.players.length);
-          if (gameData.rounds[round].length == gameData.players.length){
-            io.to(data.roomName).emit('nextRound', {round: parseInt(gameData.current_round) + 1})
+          if (gameData.rounds[round].length >= gameData.players.length){
+            gameData.current_round += 1;
+            if(gameData.current_round > gameData.players.length + 1){
+              gameData.finished = true;
+              gameData.in_process = false;
+              io.to(data.roomName).emit('gameOver', {});
+            }
+            db.collection('games').findAndModify({
+              query: {'room': data.roomName},
+              update: {$set:{ 'current_round': gameData.current_round, 'finished': gameData.finished, 'in_process': gameData.in_process}}
+            }).then(function(){
+              if(gameData.in_process){
+                io.to(data.roomName).emit('nextRound', {round: parseInt(gameData.current_round), players: gameData.players})
+              }
+            })
           }
         })
       })
@@ -109,18 +109,16 @@ io.on('connection', function(socket){
     })
   });
   socket.on('start', function(data){
-    console.log('start', data);
-    io.to(data.room).emit('startGame', {})
+    db.collection('games').findOne({'room': data.room}).then(function(gameData){
+      io.to(data.room).emit('startGame', {players: gameData.players})
+    })
   })
 })
 
 function checkDbForUser(data, user){
-  console.log('in checkDbForUser', data.players);
   var findUser = data.players.filter(function(player){
-    console.log(player);
     return player.username.toLowerCase() == user.toLowerCase()
   });
-  console.log('findUser', findUser);
   if(findUser.length){
     return true;
   }else{
