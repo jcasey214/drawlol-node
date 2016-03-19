@@ -38,7 +38,8 @@ io.on('connection', function(socket){
             1: []
           }
         }).then(function(){
-          socket.emit('joinSuccess', {roomName: data.roomName, creator: true})
+          socket.emit('joinSuccess', {roomName: data.roomName, creator: true, created_by: data.user});
+          io.to(data.roomName).emit('userJoined', {players: [{username: data.user, sheet: []}]})
         })
       }else{
         var usernameInGame = checkDbForUser(gameData, data.user);
@@ -48,12 +49,20 @@ io.on('connection', function(socket){
             query: {'room': data.roomName },
             update: {$set: {'players': gameData.players}}
           }).then(function(data){
+            socket.emit('joinSuccess', {
+              players: gameData.players,
+              roomName: gameData.roomName,
+              creator: false,
+              created_by: gameData.created_by
+            });
+            io.to(gameData.room).emit('userJoined', {players: gameData.players})
             return;
           })
         }
       }
     })
   })
+
   socket.on('chatMessage', function(data){
     io.to(data.room).emit('chatMessage', {message: data.message, user: data.user})
   })
@@ -88,7 +97,7 @@ io.on('connection', function(socket){
             if(gameData.current_round > gameData.players.length + 1){
               gameData.finished = true;
               gameData.in_process = false;
-              io.to(data.roomName).emit('gameOver', {});
+              io.to(data.roomName).emit('gameOver', {players: gameData.players});
             }
             db.collection('games').findAndModify({
               query: {'room': data.roomName},
@@ -104,16 +113,35 @@ io.on('connection', function(socket){
     })
   })
   socket.on('leaveRoom', function(data){
-    io.to(data.room).emit('userDisconnect', {
-      user: data.user
+    console.log('left room', data.user);
+    db.collection('games').findOne({'room': data.room}).then(function(gameData){
+      if(gameData.in_process == true){
+        console.log('gameData.in_process', gameData);
+        var newPlayerList = gameData.players.filter(function(player){
+          return player.username != data.user
+        })
+        gameData.players = newPlayerList;
+        console.log(newPlayerList);
+        db.collection('games').findAndModify({
+          query: {'room': data.room},
+          update: {$set: {players: gameData.players}}
+        }).then(function(){
+          console.log('emitting userDisconnect');
+          io.to(data.room).emit('userDisconnect', {
+            players: gameData.players
+          });
+        });
+      };
     })
   });
+
   socket.on('start', function(data){
     db.collection('games').findOne({'room': data.room}).then(function(gameData){
       io.to(data.room).emit('startGame', {players: gameData.players})
     })
   })
 })
+
 
 function checkDbForUser(data, user){
   var findUser = data.players.filter(function(player){
