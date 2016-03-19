@@ -13,10 +13,10 @@ var routes = require('./routes/api');
 var users = require('./routes/users');
 var auth = require('./routes/auth');
 
-var dbURL = 'mongodb://localhost:27017/drawlol' //|| process.env.DATABASE_URL;
+var dbURL = 'mongodb://localhost:27017/drawlol' || process.env.MONGOLAB_URI;
 var db = mongo(dbURL, 'games');
 
-server.listen(8000);
+server.listen(process.env.PORT || 8000);
 
 io.on('connection', function(socket){
   socket.emit('handshake', {});
