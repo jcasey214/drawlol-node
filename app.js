@@ -21,8 +21,8 @@ server.listen(process.env.PORT || 8000);
 io.on('connection', function(socket){
   socket.emit('handshake', {});
   socket.on('joinRoom', function(data){
-    socket.join(`${ data.roomName }`);
-    io.to(`${data.roomName}`).emit('userJoined',{user: data.user});
+    socket.join(data.roomName);
+    io.to(data.roomName}).emit('userJoined',{user: data.user});
     db.collection('games').findOne({'room': data.roomName}).then(function(gameData){
       if(gameData === null){
         db.collection('games').insert({
