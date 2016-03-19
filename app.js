@@ -13,7 +13,7 @@ var routes = require('./routes/api');
 var users = require('./routes/users');
 var auth = require('./routes/auth');
 
-var dbURL = 'mongodb://localhost:27017/drawlol' || process.env.MONGOLAB_URI;
+var dbURL = process.env.MONGOLAB_URI || 'mongodb://localhost:27017/drawlol';
 var db = mongo(dbURL, 'games');
 
 server.listen(process.env.PORT || 8000);
