@@ -13,17 +13,20 @@ var routes = require('./routes/api');
 var users = require('./routes/users');
 var auth = require('./routes/auth');
 
-var dbURL = process.env.MONGOLAB_URI || 'mongodb://localhost:27017/drawlol';
+var dbURL = process.env.MONGOLAB_URI; //|| 'mongodb://localhost:27017/drawlol';
 var db = mongo(dbURL, 'games');
 
 server.listen(process.env.PORT || 8000);
 
 io.on('connection', function(socket){
+  console.log('connection');
   socket.emit('handshake', {});
   socket.on('joinRoom', function(data){
+    console.log('joinRoom', data);
     socket.join(data.roomName);
     io.to(data.roomName).emit('userJoined',{user: data.user});
     db.collection('games').findOne({'room': data.roomName}).then(function(gameData){
+      console.log(gameData);
       if(gameData === null){
         db.collection('games').insert({
           room: data.roomName,
