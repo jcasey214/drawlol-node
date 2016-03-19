@@ -164,6 +164,10 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(cors());
 
+app.get('/', function(req, res, next){
+  res.send('app is running');
+});
+
 app.use('/api', routes);
 app.use('/users', users);
 app.use('/auth', auth);
