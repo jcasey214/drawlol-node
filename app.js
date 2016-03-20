@@ -14,7 +14,7 @@ var routes = require('./routes/api');
 var users = require('./routes/users');
 var auth = require('./routes/auth');
 
-var dbURL = process.env.MONGOLAB_URI + 'drawlol'; //|| 'mongodb://localhost:27017/drawlol';
+var dbURL = (process.env.MONGOLAB_URI || 'mongodb://localhost:27017/') + 'drawlol';
 var db = mongo(dbURL);
 
 server.listen(process.env.PORT || 8000);
