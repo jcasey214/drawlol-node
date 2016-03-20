@@ -15,7 +15,7 @@ require('dotenv').load();
 // var users = require('./routes/users');
 // var auth = require('./routes/auth');
 
-var dbURL = (process.env.MONGOLAB_URI || 'mongodb://localhost:27017/') + 'drawlol';
+var dbURL = (process.env.MONGOLAB_URI || 'mongodb://localhost:27017/');//+ 'drawlol';
 
 var database = {
   connect: function(){
