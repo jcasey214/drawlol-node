@@ -15,7 +15,7 @@ require('dotenv').load();
 // var users = require('./routes/users');
 // var auth = require('./routes/auth');
 
-var dbURL = (process.env.MONGOLAB_URI || 'mongodb://localhost:27017/drawlol') + drawlol;
+var dbURL = (process.env.MONGOLAB_URI || 'mongodb://localhost:27017/') + 'drawlol';
 
 var database = {
   connect: function(){
@@ -25,6 +25,7 @@ var database = {
           console.log(err);
           reject(err);
         }else{
+          console.log('success');
           resolve(db);
         }
       })
@@ -42,40 +43,42 @@ io.on('connection', function(socket){
     socket.join(data.roomName);
     io.to(data.roomName).emit('userJoined',{user: data.user});
     database.connect().then(function(db){
-      db.collection('games').findOne({'room': data.roomName}, function(gameData){
-      console.log(gameData);
+      db.collection('games').findOne({'room': data.roomName}, function(err, gameData){
       if(gameData === null){
-        db.collection('games').insert({
-          room: data.roomName,
-          created_by: data.user,
-          date: new Date(),
-          players: [{username: data.user, sheet: []}],
-          finished: false,
-          cancelled: false,
-          in_process: true,
-          current_round: 1,
-          rounds: {
-            1: []
-          }
-        })
+        // database.connect().then(function(db){
+          db.collection('games').insert({
+            room: data.roomName,
+            created_by: data.user,
+            date: new Date(),
+            players: [{username: data.user, sheet: []}],
+            finished: false,
+            cancelled: false,
+            in_process: true,
+            current_round: 1,
+            rounds: {
+              1: []
+            }
+          })
+          db.close();
+        // })
         socket.emit('joinSuccess', {roomName: data.roomName, creator: true, created_by: data.user});
         io.to(data.roomName).emit('userJoined', {players: [{username: data.user, sheet: []}]})
-      }else{
+      }else if (data.user != null){
+        console.log('gameData', gameData);
         gameData.players.push({username: data.user, sheet: []});
-        db.collection('games').findAndModify({
-          query: {'room': data.roomName },
-          update: {$set: {'players': gameData.players}}
-        })
-        socket.emit('joinSuccess', {
+        console.log('gameData', gameData);
+        db.collection('games').update({'room': data.roomName }, {$set: {'players': gameData.players}});
+          socket.emit('joinSuccess', {
           players: gameData.players,
           roomName: gameData.roomName,
           creator: false,
           created_by: gameData.created_by
           });
         io.to(gameData.room).emit('userJoined', {players: gameData.players});
-        }
-      })
-      db.close();
+        db.close();
+      }
+    })
+      // db.close();
     })
   })
 
@@ -84,8 +87,11 @@ io.on('connection', function(socket){
   })
 
   socket.on('sheetSubmit', function(data){
+    console.log(data);
     database.connect().then(function(db){
-      db.collection('games').findOne({'room': data.roomName}, function(gameData){
+      db.collection('games').findOne({'room': data.roomName}, function(err, gameData){
+        if(err){console.log(err);}
+        console.log(gameData);
         gameData.players.forEach(function(player){
           if( player.username == data.sheet){
             if(data.phase == 'draw'){
@@ -95,71 +101,58 @@ io.on('connection', function(socket){
               console.log('view');
               player.sheet.push(data.sentence)
             }
-            var round = data.round.toString();
-            if(gameData.rounds[round]){
-              gameData.rounds[round].push(data.user);
-            }else{
-              gameData.rounds[round] = [data.user]
-            }
           }
-        })
-        db.collection('games').findAndModify({
-        query: {'room': data.roomName },
-        update: {$set: {'players': gameData.players, 'rounds': gameData.rounds}}
-      })
-      socket.emit('success', {});
-      db.collection('games').findOne({'room': data.roomName}, function(gameData){
+        });
+        socket.emit('success', {});
         var round = data.round.toString();
+        if(gameData.rounds[round]){
+          gameData.rounds[round].push(data.user);
+        }else{
+          gameData.rounds[round] = [data.user]
+        }
         if (gameData.rounds[round].length >= gameData.players.length){
           gameData.current_round += 1;
-          if(gameData.current_round > gameData.players.length + 1){
+          if(gameData.current_round > (gameData.players.length + 1)){
             gameData.finished = true;
             gameData.in_process = false;
             io.to(data.roomName).emit('gameOver', {players: gameData.players});
           }
-        }
-        db.collection('games').findAndModify({
-              query: {'room': data.roomName},
-              update: {$set:{ 'current_round': gameData.current_round, 'finished': gameData.finished, 'in_process': gameData.in_process}}
-        })
-    })
-      .then(function(){
-            .then(function(){
-              if(gameData.in_process){
-                io.to(data.roomName).emit('nextRound', {round: parseInt(gameData.current_round), players: gameData.players})
-              }
-            })
+          if(gameData.in_process){
+            io.to(data.roomName).emit('nextRound', {round: parseInt(gameData.current_round), players: gameData.players})
           }
-        })
-      })
-    })
+        }
+        db.collection('games').update({'room': data.roomName },
+        {$set: {'players': gameData.players, 'rounds': gameData.rounds, 'finished': gameData.finished, 'in_process': gameData.in_process, 'current_round': gameData.current_round}});
+        db.close();
+      });
   })
+})
   socket.on('leaveRoom', function(data){
     console.log('left room', data.user);
-    db.collection('games').findOne({'room': data.room}).then(function(gameData){
-      if(gameData.in_process == true){
-        console.log('gameData.in_process', gameData);
-        var newPlayerList = gameData.players.filter(function(player){
-          return player.username != data.user
-        })
-        gameData.players = newPlayerList;
-        console.log(newPlayerList);
-        db.collection('games').findAndModify({
-          query: {'room': data.room},
-          update: {$set: {players: gameData.players}}
-        }).then(function(){
-          console.log('emitting userDisconnect');
-          io.to(data.room).emit('userDisconnect', {
-            players: gameData.players
-          });
-        });
-      };
+    database.connect().then(function(db){
+      db.collection('games').findOne({'room': data.room}, function(gameData){
+        if(gameData.in_process == true){
+          console.log('gameData.in_process', gameData);
+          var newPlayerList = gameData.players.filter(function(player){
+            return player.username != data.user
+          })
+          db.collection('games').update({'room': data.roomName}, {$set: {'players': newPlayerList}})
+          db.close();
+          io.to(data.room).emit('userDisconnect', {players: newPlayerList});
+    }
     })
   });
+});
 
   socket.on('start', function(data){
-    db.collection('games').findOne({'room': data.room}).then(function(gameData){
-      io.to(data.room).emit('startGame', {players: gameData.players})
+    console.log('start');
+    database.connect().then(function(db){
+      db.collection('games').findOne({'room': data.room}, function(err, gameData){
+        if(err){console.log(err);}
+        console.log(gameData);
+        db.close();
+        io.to(data.room).emit('startGame', {players: gameData.players})
+      })
     })
   })
 })
@@ -190,9 +183,9 @@ app.get('/', function(req, res, next){
   res.send('app is running');
 });
 
-app.use('/api', routes);
-app.use('/users', users);
-app.use('/auth', auth);
+// app.use('/api', routes);
+// app.use('/users', users);
+// app.use('/auth', auth);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
