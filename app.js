@@ -7,15 +7,30 @@ var logger = require('morgan');
 var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
 var cors = require('cors');
-var mongo = require('promised-mongo');
+var mongo = require('mongodb');
+var promise = require('promise');
 require('dotenv').load();
 
-var routes = require('./routes/api');
-var users = require('./routes/users');
-var auth = require('./routes/auth');
+// var routes = require('./routes/api');
+// var users = require('./routes/users');
+// var auth = require('./routes/auth');
 
-var dbURL = process.env.MONGOLAB_URI + 'drawlol'; //|| 'mongodb://localhost:27017/drawlol';
-var db = mongo(dbURL, 'games');
+var dbURL = (process.env.MONGOLAB_URI || 'mongodb://localhost:27017/drawlol') + drawlol;
+
+var database = {
+  connect: function(){
+    return new Promise(function(resolve, reject){
+      mongo.MongoClient.connect(dbURL, function(err, db){
+        if(err){
+          console.log(err);
+          reject(err);
+        }else{
+          resolve(db);
+        }
+      })
+    })
+  }
+}
 
 server.listen(process.env.PORT || 8000);
 
@@ -26,7 +41,8 @@ io.on('connection', function(socket){
     console.log('joinRoom', data);
     socket.join(data.roomName);
     io.to(data.roomName).emit('userJoined',{user: data.user});
-    db.collection('games').findOne({'room': data.roomName}).then(function(gameData){
+    database.connect().then(function(db){
+      db.collection('games').findOne({'room': data.roomName}, function(gameData){
       console.log(gameData);
       if(gameData === null){
         db.collection('games').insert({
@@ -41,72 +57,74 @@ io.on('connection', function(socket){
           rounds: {
             1: []
           }
-        }).then(function(){
-          socket.emit('joinSuccess', {roomName: data.roomName, creator: true, created_by: data.user});
-          io.to(data.roomName).emit('userJoined', {players: [{username: data.user, sheet: []}]})
         })
+        socket.emit('joinSuccess', {roomName: data.roomName, creator: true, created_by: data.user});
+        io.to(data.roomName).emit('userJoined', {players: [{username: data.user, sheet: []}]})
       }else{
-        var usernameInGame = checkDbForUser(gameData, data.user);
-        if(!usernameInGame){
-          gameData.players.push({username: data.user, sheet: []});
-          db.collection('games').findAndModify({
-            query: {'room': data.roomName },
-            update: {$set: {'players': gameData.players}}
-          }).then(function(data){
-            socket.emit('joinSuccess', {
-              players: gameData.players,
-              roomName: gameData.roomName,
-              creator: false,
-              created_by: gameData.created_by
-            });
-            io.to(gameData.room).emit('userJoined', {players: gameData.players})
-            return;
-          })
+        gameData.players.push({username: data.user, sheet: []});
+        db.collection('games').findAndModify({
+          query: {'room': data.roomName },
+          update: {$set: {'players': gameData.players}}
+        })
+        socket.emit('joinSuccess', {
+          players: gameData.players,
+          roomName: gameData.roomName,
+          creator: false,
+          created_by: gameData.created_by
+          });
+        io.to(gameData.room).emit('userJoined', {players: gameData.players});
         }
-      }
+      })
+      db.close();
     })
   })
 
   socket.on('chatMessage', function(data){
     io.to(data.room).emit('chatMessage', {message: data.message, user: data.user})
   })
+
   socket.on('sheetSubmit', function(data){
-    db.collection('games').findOne({'room': data.roomName}).then(function(gameData){
-      gameData.players.forEach(function(player){
-        if( player.username == data.sheet){
-          if(data.phase == 'draw'){
-            console.log('draw');
-            player.sheet.push(data.image);
-          }else if(data.phase == 'view'){
-            console.log('view');
-            player.sheet.push(data.sentence)
+    database.connect().then(function(db){
+      db.collection('games').findOne({'room': data.roomName}, function(gameData){
+        gameData.players.forEach(function(player){
+          if( player.username == data.sheet){
+            if(data.phase == 'draw'){
+              console.log('draw');
+              player.sheet.push(data.image);
+            }else if(data.phase == 'view'){
+              console.log('view');
+              player.sheet.push(data.sentence)
+            }
+            var round = data.round.toString();
+            if(gameData.rounds[round]){
+              gameData.rounds[round].push(data.user);
+            }else{
+              gameData.rounds[round] = [data.user]
+            }
           }
-          var round = data.round.toString();
-          if(gameData.rounds[round]){
-            gameData.rounds[round].push(data.user);
-          }else{
-            gameData.rounds[round] = [data.user]
-          }
-        }
-      })
-      db.collection('games').findAndModify({
+        })
+        db.collection('games').findAndModify({
         query: {'room': data.roomName },
         update: {$set: {'players': gameData.players, 'rounds': gameData.rounds}}
-      }).then(function(){
-        socket.emit('success', {});
-        db.collection('games').findOne({'room': data.roomName}).then(function(gameData){
-          var round = data.round.toString();
-          if (gameData.rounds[round].length >= gameData.players.length){
-            gameData.current_round += 1;
-            if(gameData.current_round > gameData.players.length + 1){
-              gameData.finished = true;
-              gameData.in_process = false;
-              io.to(data.roomName).emit('gameOver', {players: gameData.players});
-            }
-            db.collection('games').findAndModify({
+      })
+      socket.emit('success', {});
+      db.collection('games').findOne({'room': data.roomName}, function(gameData){
+        var round = data.round.toString();
+        if (gameData.rounds[round].length >= gameData.players.length){
+          gameData.current_round += 1;
+          if(gameData.current_round > gameData.players.length + 1){
+            gameData.finished = true;
+            gameData.in_process = false;
+            io.to(data.roomName).emit('gameOver', {players: gameData.players});
+          }
+        }
+        db.collection('games').findAndModify({
               query: {'room': data.roomName},
               update: {$set:{ 'current_round': gameData.current_round, 'finished': gameData.finished, 'in_process': gameData.in_process}}
-            }).then(function(){
+        })
+    })
+      .then(function(){
+            .then(function(){
               if(gameData.in_process){
                 io.to(data.roomName).emit('nextRound', {round: parseInt(gameData.current_round), players: gameData.players})
               }
