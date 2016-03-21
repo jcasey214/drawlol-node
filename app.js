@@ -15,7 +15,7 @@ require('dotenv').load();
 // var users = require('./routes/users');
 // var auth = require('./routes/auth');
 
-var dbURL = (process.env.MONGOLAB_URI || 'mongodb://localhost:27017/');//+ 'drawlol';
+var dbURL = (process.env.MONGOLAB_URI || 'mongodb://localhost:27017/drawlol');
 
 var database = {
   connect: function(){
@@ -53,7 +53,7 @@ io.on('connection', function(socket){
             players: [{username: data.user, sheet: []}],
             finished: false,
             cancelled: false,
-            in_process: true,
+            in_process: false,
             current_round: 1,
             rounds: {
               1: []
@@ -63,7 +63,7 @@ io.on('connection', function(socket){
         // })
         socket.emit('joinSuccess', {roomName: data.roomName, creator: true, created_by: data.user});
         io.to(data.roomName).emit('userJoined', {players: [{username: data.user, sheet: []}]})
-      }else if (data.user != null){
+      }else if (data.user != null && !gameData.in_process){
         console.log('gameData', gameData);
         gameData.players.push({username: data.user, sheet: []});
         console.log('gameData', gameData);
@@ -76,6 +76,8 @@ io.on('connection', function(socket){
           });
         io.to(gameData.room).emit('userJoined', {players: gameData.players});
         db.close();
+      }else{
+        socket.emit('sorry', {message: 'The game has already begun'})
       }
     })
       // db.close();
@@ -128,10 +130,9 @@ io.on('connection', function(socket){
   })
 })
   socket.on('leaveRoom', function(data){
-    console.log('left room', data.user);
+    console.log('left room', data);
     database.connect().then(function(db){
-      db.collection('games').findOne({'room': data.room}, function(gameData){
-        if(gameData.in_process == true){
+      db.collection('games').findOne({'room': data.room}, function(err, gameData){
           console.log('gameData.in_process', gameData);
           var newPlayerList = gameData.players.filter(function(player){
             return player.username != data.user
@@ -139,7 +140,6 @@ io.on('connection', function(socket){
           db.collection('games').update({'room': data.roomName}, {$set: {'players': newPlayerList}})
           db.close();
           io.to(data.room).emit('userDisconnect', {players: newPlayerList});
-    }
     })
   });
 });
@@ -150,6 +150,7 @@ io.on('connection', function(socket){
       db.collection('games').findOne({'room': data.room}, function(err, gameData){
         if(err){console.log(err);}
         console.log(gameData);
+        db.collection('games').update({'room': data.room}, {$set:{'in_process': true}});
         db.close();
         io.to(data.room).emit('startGame', {players: gameData.players})
       })
