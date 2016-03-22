@@ -9,7 +9,7 @@ var bodyParser = require('body-parser');
 var cors = require('cors');
 var mongo = require('mongodb');
 var promise = require('promise');
-require('dotenv').load();
+// require('dotenv').load();
 
 // var routes = require('./routes/api');
 // var users = require('./routes/users');
@@ -41,7 +41,7 @@ io.on('connection', function(socket){
   socket.on('joinRoom', function(data){
     console.log('joinRoom', data);
     socket.join(data.roomName);
-    io.to(data.roomName).emit('userJoined',{user: data.user});
+    // io.to(data.roomName).emit('userJoined',{user: data.user});
     database.connect().then(function(db){
       db.collection('games').findOne({'room': data.roomName}, function(err, gameData){
       if(gameData === null){
@@ -76,11 +76,14 @@ io.on('connection', function(socket){
           });
         io.to(gameData.room).emit('userJoined', {players: gameData.players});
         db.close();
-      }else{
+      }else if(gameData.in_process){
         socket.emit('sorry', {message: 'The game has already begun'})
+        db.close();
+      }else{
+        console.log('else');
       }
+      db.close();
     })
-      // db.close();
     })
   })
 
@@ -132,15 +135,19 @@ io.on('connection', function(socket){
   socket.on('leaveRoom', function(data){
     console.log('left room', data);
     database.connect().then(function(db){
-      db.collection('games').findOne({'room': data.room}, function(err, gameData){
+      var newPlayerList;
+      db.collection('games').findOne({'room': data.roomName}, function(err, gameData){
+        if(err){console.log(err);}else{
           console.log('gameData.in_process', gameData);
-          var newPlayerList = gameData.players.filter(function(player){
+          newPlayerList = gameData.players.filter(function(player){
             return player.username != data.user
           })
-          db.collection('games').update({'room': data.roomName}, {$set: {'players': newPlayerList}})
-          db.close();
-          io.to(data.room).emit('userDisconnect', {players: newPlayerList});
-    })
+        }
+          db.collection('games').update({'room': data.roomName}, {$set: {'players': newPlayerList}}, function(){
+            db.close();
+            io.to(data.roomName).emit('userDisconnect', {players: newPlayerList});
+      })
+    });
   });
 });
 
