@@ -64,6 +64,10 @@ io.on('connection', function(socket){
         socket.emit('joinSuccess', {roomName: data.roomName, creator: true, created_by: data.user});
         io.to(data.roomName).emit('userJoined', {players: [{username: data.user, sheet: []}]})
       }else if (data.user != null && !gameData.in_process){
+          data.user = checkDbForUser(gameData, data.user);
+          socket.emit('duplicateUsername', {
+            newUsername: data.user
+          })
         console.log('gameData', gameData);
         gameData.players.push({username: data.user, sheet: []});
         console.log('gameData', gameData);
@@ -167,13 +171,16 @@ io.on('connection', function(socket){
 
 
 function checkDbForUser(data, user){
+  console.log(data, user);
   var findUser = data.players.filter(function(player){
     return player.username.toLowerCase() == user.toLowerCase()
   });
   if(findUser.length){
-    return true;
+    console.log('true');
+    return checkDbForUser(data, user + '1')
   }else{
-    return false;
+    console.log(user);
+    return user;
   }
 }
 
