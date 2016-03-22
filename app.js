@@ -76,7 +76,7 @@ io.on('connection', function(socket){
           });
         io.to(gameData.room).emit('userJoined', {players: gameData.players});
         db.close();
-      }else if(gameData.in_process){
+      }else if(gameData.in_process || gameData.finished){
         socket.emit('sorry', {message: 'The game has already begun'})
         db.close();
       }else{
