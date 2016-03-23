@@ -63,6 +63,8 @@ io.on('connection', function(socket){
         // })
         socket.emit('joinSuccess', {roomName: data.roomName, creator: true, created_by: data.user});
         io.to(data.roomName).emit('userJoined', {players: [{username: data.user, sheet: []}]})
+      }else if (gameData.finished){
+        socket.emit('finishedGame', {game: gameData, username: 'view'});
       }else if (data.user != null && !gameData.in_process){
           data.user = checkDbForUser(gameData, data.user);
           socket.emit('duplicateUsername', {
@@ -80,7 +82,7 @@ io.on('connection', function(socket){
           });
         io.to(gameData.room).emit('userJoined', {players: gameData.players});
         db.close();
-      }else if(gameData.in_process || gameData.finished){
+      }else if(gameData.in_process){
         socket.emit('sorry', {message: 'The game has already begun'})
         db.close();
       }else{
